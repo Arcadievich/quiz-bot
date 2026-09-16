@@ -1,3 +1,5 @@
 .venv
 .env
 quiz_questions
+__pycache__
+questions_with_answers.json
