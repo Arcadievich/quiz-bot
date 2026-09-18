@@ -29,6 +29,25 @@ powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | ie
 uv sync
 ```
 
+Установите [Docker](https://www.docker.com) в вашу операционную систему
+
+Запустите базу данных на Redis командой:
+
+```bash
+docker run -d \
+  --name redis-rdb \
+  -p 6379:6379 \
+  -v redis-data:/data \
+  redis:latest \
+  redis-server --save 60 1
+```
+
+Или в одну строку:
+
+```powershell
+docker run -d --name redis-rdb -p 6379:6379 -v redis-data:/data redis:latest redis-server --save 60 1
+```
+
 В папке репозитория создайте `.env` файл и укажите в нем следующие переменные:
 - `TG_BOT_TOKEN` - токен вашего Telegram-бота, который можно получить, создав бота через [BotFather](https://web.telegram.org/k/#@BotFather)
 - `VK_BOT_TOKEN` - API токен вашего бота во ВКонтакте. Бот создается вместе с [Сообществом](https://vk.ru/groups), затем нужно открыть вкладку `Управление` -> `Дополнительно` -> `Работа с API` в правом меню на главной странице сообщества
