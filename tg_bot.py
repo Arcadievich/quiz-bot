@@ -18,7 +18,7 @@ from telegram.ext import (
     ContextTypes,
 )
 
-from main import extract_questions
+from quiz_parser import extract_questions
 
 
 start_keyboard = [['Новый вопрос', 'Мой счет']]
@@ -45,7 +45,7 @@ class State(Enum):
     RETRY = auto()
 
 
-def make_raw_answer(text: str) -> str:
+def make_raw_answer(text):
     if not text:
         return ""
 
@@ -79,12 +79,11 @@ async def handle_new_question_request(update: Update, context: ContextTypes.DEFA
     user_id = update.effective_user.id
     questions = extract_questions('1vs1200.txt')
     question = random.choice(list(questions.keys()))
-    pair = (question, questions[question])
 
     await redis_db.set(str(user_id), question, ex=3600)
 
     await update.message.reply_text(
-        pair[0],
+        question,
         reply_markup=ReplyKeyboardRemove()
     )
 
@@ -102,15 +101,15 @@ async def handle_solution_attempt(update: Update, context: ContextTypes.DEFAULT_
     if not asked_question:
         print(f"User's answer with id {user_id} not found")
 
-    currect_answer = all_questions.get(asked_question)
-    print(currect_answer)
+    correct_answer = all_questions.get(asked_question)
+    print(correct_answer)
 
     user_answer_raw = make_raw_answer(user_text)
-    currect_answer_raw = make_raw_answer(currect_answer)
-    print(f'User answer raw: {user_answer_raw}')
-    print(f'Current answer raw: {currect_answer_raw}')
+    correct_answer_raw = make_raw_answer(correct_answer)
+    print(f'\nUser answer raw: {user_answer_raw}')
+    print(f'Current answer raw: {correct_answer_raw}')
 
-    if user_answer_raw == currect_answer_raw:
+    if user_answer_raw == correct_answer_raw:
         await update.message.reply_text(
             'Правильный ответ!',
             reply_markup=start_keyboard_markup,
@@ -137,6 +136,9 @@ async def repeat_question_request(update: Update, context: ContextTypes.DEFAULT_
     user_id = update.effective_user.id
     question = await redis_db.get(str(user_id))
 
+    if not question:
+        print(f"User's answer with id {user_id} not found")
+
     await update.message.reply_text(
         question,
         reply_markup=ReplyKeyboardRemove()
@@ -151,10 +153,10 @@ async def handle_give_up(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     all_questions = extract_questions('1vs1200.txt')
 
-    current_answer =  all_questions.get(asked_question)
+    correct_answer =  all_questions.get(asked_question)
 
     await update.message.reply_text(
-        f'Правильный ответ: {current_answer}',
+        f'Правильный ответ: {correct_answer}',
         reply_markup=ReplyKeyboardRemove()
     )
 
