@@ -27,20 +27,3 @@ def extract_questions(path):
             result[question] = answer
 
     return result
-
-
-def main():
-    questions_with_answers = {}
-
-    files_names = os.listdir('./quiz_questions')
-
-    for file_name in files_names:
-        records = extract_questions(file_name)
-        questions_with_answers.update(records)
-
-    with open('questions_with_answers.json', 'w', encoding='utf-8') as file:
-        json.dump(questions_with_answers, file, ensure_ascii=False, indent=4)
-
-
-if __name__=='__main__':
-    main()
