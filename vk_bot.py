@@ -1,6 +1,7 @@
 import os
 import re
 import random
+import traceback
 from time import sleep
 
 import redis
@@ -156,6 +157,7 @@ def handle_give_up(user_id, vk_api):
 def main():
     load_dotenv()
     vk_bot_token = os.environ['VK_BOT_TOKEN']
+    admin_id = os.environ['VK_ADMIN_ID']
 
     vk_session = vk.VkApi(token=vk_bot_token)
     vk_api = vk_session.get_api()
@@ -168,20 +170,30 @@ def main():
             user_id = event.user_id
             message_text = event.text.lower()
 
-            if message_text == '/start' or message_text == 'start':
-                handle_message_start(user_id, vk_api)
+            try:
+                if message_text == '/start' or message_text == 'start':
+                    handle_message_start(user_id, vk_api)
 
-            elif message_text == 'новый вопрос':
-                handle_new_question_request(user_id, vk_api)
+                elif message_text == 'новый вопрос':
+                    handle_new_question_request(user_id, vk_api)
 
-            elif message_text == 'да':
-                repeat_question_request(user_id, vk_api)
+                elif message_text == 'да':
+                    repeat_question_request(user_id, vk_api)
 
-            elif message_text == 'нет':
-                handle_give_up(user_id, vk_api)
+                elif message_text == 'нет':
+                    handle_give_up(user_id, vk_api)
 
-            elif message_text:
-                handle_solution_attempt(user_id, message_text, vk_api)
+                elif message_text:
+                    handle_solution_attempt(user_id, message_text, vk_api)
+            except Exception as e:
+                tb_list = traceback.format_exception(None, e, e.__traceback__)
+                tb_string = ''.join(tb_list)
+
+                vk_api.messages.send(
+                    user_id=admin_id,
+                    message=f'Ошибка:\n{tb_string}',
+                    random_id=random.randint(1,1000)
+                )
                 
 
 if __name__ == "__main__":

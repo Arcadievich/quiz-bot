@@ -2,6 +2,7 @@ import os
 import random
 import re
 import asyncio
+import traceback
 from enum import Enum, auto
 
 import redis.asyncio as redis
@@ -73,6 +74,16 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
     return State.CHOOSING
+
+
+async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    tb_list = traceback.format_exception(None, context.error, context.error.__traceback__)
+    tb_string = ''.join(tb_list)
+
+    await context.bot.send_message(
+        chat_id=context.bot_data['admin_id'],
+        text=f'Ошибка:\n{tb_string}'
+    )
 
 
 async def handle_new_question_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -177,6 +188,7 @@ async def on_shutdown(application):
 def main():
     load_dotenv()
     bot_token = os.environ['TG_BOT_TOKEN']
+    admin_id = os.environ['TG_ADMIN_ID']
 
     application = (
         Application.builder()
@@ -186,6 +198,8 @@ def main():
         .write_timeout(15.0)
         .build()
     )
+
+    application.bot_data['admin_id'] = admin_id
 
     conversation_handler = ConversationHandler(
         entry_points=[CommandHandler('start', start)],
@@ -209,6 +223,8 @@ def main():
     )
 
     application.add_handler(conversation_handler)
+
+    application.add_error_handler(error_handler)
 
     application.post_shutdown = on_shutdown
 
