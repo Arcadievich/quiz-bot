@@ -55,6 +55,21 @@ docker run -d --name redis-rdb -p 6379:6379 -v redis-data:/data redis:latest red
 - `VK_ADMIN_ID` - ID пользователя ВКонтакте, которому должны приходить сообщения об ошибках
 
 
+## Запуск
+
+Для запуска ботов выполните команду внутри папки с репозиторием:
+
+```bash
+uv run tg_bot.py
+```
+
+Или:
+
+```bash
+uv run vk_bot.py
+```
+
+
 ## Ссылки на ботов
 
 Telegram Bot
