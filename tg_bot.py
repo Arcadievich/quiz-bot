@@ -1,8 +1,8 @@
 import os
 import random
-import re
 import asyncio
 import traceback
+import argparse
 from enum import Enum, auto
 
 import redis.asyncio as redis
@@ -20,6 +20,7 @@ from telegram.ext import (
 )
 
 from quiz_parser import extract_questions
+from quiz_parser import make_raw_answer
 
 
 start_keyboard = [['Новый вопрос', 'Мой счет']]
@@ -46,27 +47,6 @@ class State(Enum):
     RETRY = auto()
 
 
-def make_raw_answer(text):
-    if not text:
-        return ""
-
-    text = re.sub(r"\([^)]*\)", " ", text)
-    text = re.sub(r"\[[^\]]*\]", " ", text)
-    text = re.sub(r"\{[^}]*\}", " ", text)
-
-    text = text.split(".")[0]
-
-    text = text.lower()
-
-    text = text.replace("ё", "е")
-
-    text = re.sub(r"[^\w\s\-]", " ", text, flags=re.UNICODE)
-
-    text = re.sub(r"\s+", " ", text).strip()
-
-    return text
-
-
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         'Здравствуйте',
@@ -77,19 +57,18 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    tb_list = traceback.format_exception(None, context.error, context.error.__traceback__)
-    tb_string = ''.join(tb_list)
+    traceback_lines = traceback.format_exception(None, context.error, context.error.__traceback__)
+    error_report = ''.join(traceback_lines)
 
     await context.bot.send_message(
         chat_id=context.bot_data['admin_id'],
-        text=f'Ошибка:\n{tb_string}'
+        text=f'Ошибка:\n{error_report}'
     )
 
 
 async def handle_new_question_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    questions = extract_questions('1vs1200.txt')
-    question = random.choice(list(questions.keys()))
+    question = random.choice(list(context.bot_data['questions_with_answers'].keys()))
 
     await redis_db.set(str(user_id), question, ex=3600)
 
@@ -105,20 +84,15 @@ async def handle_solution_attempt(update: Update, context: ContextTypes.DEFAULT_
     user_id = update.effective_user.id
     user_text = update.message.text
 
-    all_questions = extract_questions('1vs1200.txt')
-
     asked_question = await redis_db.get(str(user_id))
 
     if not asked_question:
         print(f"User's answer with id {user_id} not found")
 
-    correct_answer = all_questions.get(asked_question)
-    print(correct_answer)
+    correct_answer = context.bot_data['questions_with_answers'].get(asked_question)
 
     user_answer_raw = make_raw_answer(user_text)
     correct_answer_raw = make_raw_answer(correct_answer)
-    print(f'\nUser answer raw: {user_answer_raw}')
-    print(f'Current answer raw: {correct_answer_raw}')
 
     if user_answer_raw == correct_answer_raw:
         await update.message.reply_text(
@@ -162,9 +136,7 @@ async def handle_give_up(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     asked_question = await redis_db.get(str(user_id))
 
-    all_questions = extract_questions('1vs1200.txt')
-
-    correct_answer =  all_questions.get(asked_question)
+    correct_answer =  context.bot_data['questions_with_answers'].get(asked_question)
 
     await update.message.reply_text(
         f'Правильный ответ: {correct_answer}',
@@ -190,6 +162,18 @@ def main():
     bot_token = os.environ['TG_BOT_TOKEN']
     admin_id = os.environ['TG_ADMIN_ID']
 
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        'path',
+        type=str,
+        nargs='?',
+        default='1vs1200.txt',
+        help='Path to the txt file with questions',
+    )
+    args = parser.parse_args()
+
+    questions_with_answers = extract_questions(args.path)
+
     application = (
         Application.builder()
         .token(bot_token)
@@ -200,6 +184,7 @@ def main():
     )
 
     application.bot_data['admin_id'] = admin_id
+    application.bot_data['questions_with_answers'] = questions_with_answers
 
     conversation_handler = ConversationHandler(
         entry_points=[CommandHandler('start', start)],

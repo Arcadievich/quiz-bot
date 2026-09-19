@@ -18,12 +18,33 @@ def extract_questions(path):
         re.DOTALL
     )
 
-    result = {}
+    questions_and_answers = {}
 
     for pair in text:
         for match in pattern.finditer(pair):
             question = " ".join(match['q'].split())
             answer   = " ".join(match['a'].split())
-            result[question] = answer
+            questions_and_answers[question] = answer
 
-    return result
+    return questions_and_answers
+
+
+def make_raw_answer(text):
+    if not text:
+        return ""
+
+    text = re.sub(r"\([^)]*\)", " ", text)
+    text = re.sub(r"\[[^\]]*\]", " ", text)
+    text = re.sub(r"\{[^}]*\}", " ", text)
+
+    text = text.split(".")[0]
+
+    text = text.lower()
+
+    text = text.replace("ё", "е")
+
+    text = re.sub(r"[^\w\s\-]", " ", text, flags=re.UNICODE)
+
+    text = re.sub(r"\s+", " ", text).strip()
+
+    return text

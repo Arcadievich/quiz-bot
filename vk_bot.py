@@ -1,7 +1,7 @@
 import os
-import re
 import random
 import traceback
+import argparse
 from time import sleep
 
 import redis
@@ -11,35 +11,15 @@ from vk_api.longpoll import VkLongPoll, VkEventType
 from vk_api.keyboard import VkKeyboard, VkKeyboardColor
 
 from quiz_parser import extract_questions
+from quiz_parser import make_raw_answer
 
 
 redis_db = redis.Redis(
     host='localhost',
     port=6379,
-    db=0,
+    db=1,
     decode_responses=True,
 )
-
-
-def make_raw_answer(text):
-    if not text:
-        return ""
-
-    text = re.sub(r"\([^)]*\)", " ", text)
-    text = re.sub(r"\[[^\]]*\]", " ", text)
-    text = re.sub(r"\{[^}]*\}", " ", text)
-
-    text = text.split(".")[0]
-
-    text = text.lower()
-
-    text = text.replace("ё", "е")
-
-    text = re.sub(r"[^\w\s\-]", " ", text, flags=re.UNICODE)
-
-    text = re.sub(r"\s+", " ", text).strip()
-
-    return text
 
 
 def get_start_keyboard():
@@ -65,9 +45,8 @@ def handle_message_start(user_id, vk_api):
     )
 
 
-def handle_new_question_request(user_id, vk_api):
-    questions = extract_questions('1vs1200.txt')
-    question = random.choice(list(questions.keys()))
+def handle_new_question_request(user_id, vk_api, questions_with_answers):
+    question = random.choice(list(questions_with_answers.keys()))
 
     redis_db.set(str(user_id), question, ex=3600)
 
@@ -78,21 +57,16 @@ def handle_new_question_request(user_id, vk_api):
     )
 
 
-def handle_solution_attempt(user_id, message_text, vk_api):
-    all_questions = extract_questions('1vs1200.txt')
+def handle_solution_attempt(user_id, message_text, vk_api, questions_with_answers):
     asked_question = redis_db.get(str(user_id))
 
     if not asked_question:
         print(f"User's answer with id {user_id} not found")
 
-    correct_answer = all_questions.get(asked_question)
-    print(correct_answer)
+    correct_answer = questions_with_answers.get(asked_question)
 
     user_answer_raw = make_raw_answer(message_text)
     correct_answer_raw = make_raw_answer(correct_answer)
-
-    print(f'\nUser answer raw: {user_answer_raw}')
-    print(f'Current answer raw: {correct_answer_raw}')
 
     if user_answer_raw == correct_answer_raw:
         vk_api.messages.send(
@@ -134,12 +108,10 @@ def repeat_question_request(user_id, vk_api):
     )
 
 
-def handle_give_up(user_id, vk_api):
+def handle_give_up(user_id, vk_api, questions_with_answers):
     asked_question = redis_db.get(str(user_id))
 
-    all_questions = extract_questions('1vs1200.txt')
-
-    correct_answer = all_questions.get(asked_question)
+    correct_answer = questions_with_answers.get(asked_question)
 
     vk_api.messages.send(
         user_id=user_id,
@@ -151,13 +123,25 @@ def handle_give_up(user_id, vk_api):
 
     sleep(3)
 
-    handle_new_question_request(user_id, vk_api)
+    handle_new_question_request(user_id, vk_api, questions_with_answers)
 
 
 def main():
     load_dotenv()
     vk_bot_token = os.environ['VK_BOT_TOKEN']
     admin_id = os.environ['VK_ADMIN_ID']
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        'path',
+        type=str,
+        nargs='?',
+        default='1vs1200.txt',
+        help='Path to the txt file with questions',
+    )
+    args = parser.parse_args()
+
+    questions_with_answers = extract_questions(args.path)
 
     vk_session = vk.VkApi(token=vk_bot_token)
     vk_api = vk_session.get_api()
@@ -166,35 +150,38 @@ def main():
 
     longpoll = VkLongPoll(vk_session)
     for event in longpoll.listen():
-        if event.type == VkEventType.MESSAGE_NEW and event.to_me:
+        try:
+            if event.type != VkEventType.MESSAGE_NEW or not event.to_me:
+                continue
+
             user_id = event.user_id
             message_text = event.text.lower()
 
-            try:
-                if message_text == '/start' or message_text == 'start':
-                    handle_message_start(user_id, vk_api)
+            if message_text == '/start' or message_text == 'start':
+                handle_message_start(user_id, vk_api)
 
-                elif message_text == 'новый вопрос':
-                    handle_new_question_request(user_id, vk_api)
+            elif message_text == 'новый вопрос':
+                handle_new_question_request(user_id, vk_api, questions_with_answers)
 
-                elif message_text == 'да':
-                    repeat_question_request(user_id, vk_api)
+            elif message_text == 'да':
+                repeat_question_request(user_id, vk_api)
 
-                elif message_text == 'нет':
-                    handle_give_up(user_id, vk_api)
+            elif message_text == 'нет':
+                handle_give_up(user_id, vk_api, questions_with_answers)
 
-                elif message_text:
-                    handle_solution_attempt(user_id, message_text, vk_api)
-            except Exception as e:
-                tb_list = traceback.format_exception(None, e, e.__traceback__)
-                tb_string = ''.join(tb_list)
+            elif message_text:
+                handle_solution_attempt(user_id, message_text, vk_api, questions_with_answers)
 
-                vk_api.messages.send(
-                    user_id=admin_id,
-                    message=f'Ошибка:\n{tb_string}',
-                    random_id=random.randint(1,1000)
-                )
+        except Exception as e:
+            traceback_lines = traceback.format_exception(None, e, e.__traceback__)
+            error_report = ''.join(traceback_lines)
+            vk_api.messages.send(
+                user_id=admin_id,
+                message=f'Ошибка:\n{error_report}',
+                random_id=random.randint(1,1000)
+            )
                 
 
 if __name__ == "__main__":
     main()
+    

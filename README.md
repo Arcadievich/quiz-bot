@@ -69,6 +69,12 @@ uv run tg_bot.py
 uv run vk_bot.py
 ```
 
+Также с командой запуска можно использовать аргумент `path`:
+
+```bash
+uv run vk_bot.py "filename.txt"
+```
+
 
 ## Ссылки на ботов
 
