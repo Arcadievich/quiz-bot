@@ -14,14 +14,6 @@ from quiz_parser import extract_questions
 from quiz_parser import make_raw_answer
 
 
-redis_db = redis.Redis(
-    host='localhost',
-    port=6379,
-    db=1,
-    decode_responses=True,
-)
-
-
 def get_start_keyboard():
     keyboard = VkKeyboard(one_time=True)
     keyboard.add_button('Новый вопрос', color=VkKeyboardColor.POSITIVE)
@@ -45,7 +37,7 @@ def handle_message_start(user_id, vk_api):
     )
 
 
-def handle_new_question_request(user_id, vk_api, questions_with_answers):
+def handle_new_question_request(user_id, vk_api, questions_with_answers, redis_db):
     question = random.choice(list(questions_with_answers.keys()))
 
     redis_db.set(str(user_id), question, ex=3600)
@@ -57,11 +49,8 @@ def handle_new_question_request(user_id, vk_api, questions_with_answers):
     )
 
 
-def handle_solution_attempt(user_id, message_text, vk_api, questions_with_answers):
+def handle_solution_attempt(user_id, message_text, vk_api, questions_with_answers, redis_db):
     asked_question = redis_db.get(str(user_id))
-
-    if not asked_question:
-        print(f"User's answer with id {user_id} not found")
 
     correct_answer = questions_with_answers.get(asked_question)
 
@@ -95,11 +84,8 @@ def handle_solution_attempt(user_id, message_text, vk_api, questions_with_answer
         )
 
 
-def repeat_question_request(user_id, vk_api):
+def repeat_question_request(user_id, vk_api, redis_db):
     question = redis_db.get(str(user_id))
-
-    if not question:
-        print(f"User's answer with id {user_id} not found")
 
     vk_api.messages.send(
         user_id=user_id,
@@ -108,7 +94,7 @@ def repeat_question_request(user_id, vk_api):
     )
 
 
-def handle_give_up(user_id, vk_api, questions_with_answers):
+def handle_give_up(user_id, vk_api, questions_with_answers, redis_db):
     asked_question = redis_db.get(str(user_id))
 
     correct_answer = questions_with_answers.get(asked_question)
@@ -123,13 +109,24 @@ def handle_give_up(user_id, vk_api, questions_with_answers):
 
     sleep(3)
 
-    handle_new_question_request(user_id, vk_api, questions_with_answers)
+    handle_new_question_request(user_id, vk_api, questions_with_answers, redis_db)
 
 
 def main():
     load_dotenv()
     vk_bot_token = os.environ['VK_BOT_TOKEN']
     admin_id = os.environ['VK_ADMIN_ID']
+
+    db_host = os.environ.get('DB_HOST', 'localhost')
+    db_port = os.environ.get('DB_PORT', 6379)
+    db_number = os.environ.get('DB_NUMBER', 1)
+
+    redis_db = redis.Redis(
+    host=db_host,
+    port=db_port,
+    db=db_number,
+    decode_responses=True,
+    )
 
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -161,16 +158,27 @@ def main():
                 handle_message_start(user_id, vk_api)
 
             elif message_text == 'новый вопрос':
-                handle_new_question_request(user_id, vk_api, questions_with_answers)
+                handle_new_question_request(
+                    user_id,
+                    vk_api,
+                    questions_with_answers,
+                    redis_db
+                )
 
             elif message_text == 'да':
-                repeat_question_request(user_id, vk_api)
+                repeat_question_request(user_id, vk_api, redis_db)
 
             elif message_text == 'нет':
-                handle_give_up(user_id, vk_api, questions_with_answers)
+                handle_give_up(user_id, vk_api, questions_with_answers, redis_db)
 
             elif message_text:
-                handle_solution_attempt(user_id, message_text, vk_api, questions_with_answers)
+                handle_solution_attempt(
+                    user_id,
+                    message_text,
+                    vk_api,
+                    questions_with_answers,
+                    redis_db
+                )
 
         except Exception as e:
             traceback_lines = traceback.format_exception(None, e, e.__traceback__)

@@ -33,13 +33,6 @@ retry_keyboard = [
 start_keyboard_markup = ReplyKeyboardMarkup(start_keyboard, resize_keyboard=True)
 retry_keyboard_markup = ReplyKeyboardMarkup(retry_keyboard, resize_keyboard=True)
 
-redis_db = redis.Redis(
-    host='localhost',
-    port=6379,
-    db=0,
-    decode_responses=True,
-)
-
 
 class State(Enum):
     CHOOSING = auto()
@@ -70,7 +63,7 @@ async def handle_new_question_request(update: Update, context: ContextTypes.DEFA
     user_id = update.effective_user.id
     question = random.choice(list(context.bot_data['questions_with_answers'].keys()))
 
-    await redis_db.set(str(user_id), question, ex=3600)
+    await context.bot_data['redis_db'].set(str(user_id), question, ex=3600)
 
     await update.message.reply_text(
         question,
@@ -84,7 +77,7 @@ async def handle_solution_attempt(update: Update, context: ContextTypes.DEFAULT_
     user_id = update.effective_user.id
     user_text = update.message.text
 
-    asked_question = await redis_db.get(str(user_id))
+    asked_question = await context.bot_data['redis_db'].get(str(user_id))
 
     if not asked_question:
         print(f"User's answer with id {user_id} not found")
@@ -100,7 +93,7 @@ async def handle_solution_attempt(update: Update, context: ContextTypes.DEFAULT_
             reply_markup=start_keyboard_markup,
         )
 
-        await redis_db.delete(str(user_id))
+        await context.bot_data['redis_db'].delete(str(user_id))
 
         return State.CHOOSING
     
@@ -119,7 +112,7 @@ async def handle_solution_attempt(update: Update, context: ContextTypes.DEFAULT_
 
 async def repeat_question_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    question = await redis_db.get(str(user_id))
+    question = await context.bot_data['redis_db'].get(str(user_id))
 
     if not question:
         print(f"User's answer with id {user_id} not found")
@@ -134,7 +127,7 @@ async def repeat_question_request(update: Update, context: ContextTypes.DEFAULT_
 
 async def handle_give_up(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    asked_question = await redis_db.get(str(user_id))
+    asked_question = await context.bot_data['redis_db'].get(str(user_id))
 
     correct_answer =  context.bot_data['questions_with_answers'].get(asked_question)
 
@@ -143,7 +136,7 @@ async def handle_give_up(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=ReplyKeyboardRemove()
     )
 
-    await redis_db.delete(str(user_id))
+    await context.bot_data['redis_db'].delete(str(user_id))
 
     await asyncio.sleep(3)
 
@@ -152,15 +145,26 @@ async def handle_give_up(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return State.ANSWERING
 
 
-async def on_shutdown(application):
+async def on_shutdown(application, context):
 
-    await redis_db.aclose()
+    await context.bot_data['redis_db'].aclose()
 
 
 def main():
     load_dotenv()
     bot_token = os.environ['TG_BOT_TOKEN']
     admin_id = os.environ['TG_ADMIN_ID']
+
+    db_host = os.environ.get('DB_HOST', 'localhost')
+    db_port = os.environ.get('DB_PORT', 6379)
+    db_number = os.environ.get('DB_NUMBER', 0)
+
+    redis_db = redis.Redis(
+    host=db_host,
+    port=db_port,
+    db=db_number,
+    decode_responses=True,
+    )
 
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -185,6 +189,7 @@ def main():
 
     application.bot_data['admin_id'] = admin_id
     application.bot_data['questions_with_answers'] = questions_with_answers
+    application.bot_data['redis_db'] = redis_db
 
     conversation_handler = ConversationHandler(
         entry_points=[CommandHandler('start', start)],
