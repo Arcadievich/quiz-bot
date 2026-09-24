@@ -79,9 +79,6 @@ async def handle_solution_attempt(update: Update, context: ContextTypes.DEFAULT_
 
     asked_question = await context.bot_data['redis_db'].get(str(user_id))
 
-    if not asked_question:
-        print(f"User's answer with id {user_id} not found")
-
     correct_answer = context.bot_data['questions_with_answers'].get(asked_question)
 
     user_answer_raw = make_raw_answer(user_text)
@@ -113,9 +110,6 @@ async def handle_solution_attempt(update: Update, context: ContextTypes.DEFAULT_
 async def repeat_question_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     question = await context.bot_data['redis_db'].get(str(user_id))
-
-    if not question:
-        print(f"User's answer with id {user_id} not found")
 
     await update.message.reply_text(
         question,
